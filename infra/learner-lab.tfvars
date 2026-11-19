@@ -15,7 +15,10 @@ db_multi_az             = true           # two-AZ database (rubric requirement)
 enable_load_test_auth   = true           # Assignment 3 load test signs in test students; set false when finished
 enable_api_access_logs  = true           # keep per-request logs during the load test for evidence
 lambda_system_log_level = "INFO"         # keep Lambda REPORT lines (@initDuration) as cold-start evidence; production uses WARN
-db_instance_class       = "db.t4g.micro" # load-test run 1 (the Assignment 2 size); run 2 uses db.t4g.medium
+db_instance_class       = "db.t4g.micro" # the Assignment 2 size; load test showed RDS CPU at 6.4%, so no upsizing
 create_buckets_with_cli = true           # lab SCP denies s3:GetBucketObjectLockConfiguration
 web_origin_public       = true           # lab denies cloudfront:CreateOriginAccessControl; only static files are public
 enable_cloudfront       = false          # lab denies cloudfront:CreateDistribution; API Gateway serves the SPA over HTTPS
+
+# Load-test fix D (run 2): measured peak concurrency 13 + headroom. Set 0 when finished (costs credit).
+api_provisioned_concurrency = 15

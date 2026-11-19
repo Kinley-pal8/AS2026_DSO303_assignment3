@@ -33,6 +33,15 @@ S3 = boto3.client(
     config=Config(signature_version="s3v4", s3={"addressing_style": "virtual"}),
 )
 
+# Provisioned-concurrency environments are prepared before the exam opens. Opening the database
+# connection here, during that warm-up, saves the ~0.3 s the first student request would otherwise
+# spend on it (load test run 1). On-demand cold starts keep connecting on the first request.
+if os.environ.get("AWS_LAMBDA_INITIALIZATION_TYPE") == "provisioned-concurrency":
+    try:
+        db.query("SELECT 1 AS ok")
+    except Exception as e:  # never fail the warm-up; query() connects again on first use
+        log.warning("db warm-up failed (%s); connecting on first request", e)
+
 STAFF = {"tutors", "admins"}
 STUDENT = {"students"}
 ADMIN = {"admins"}

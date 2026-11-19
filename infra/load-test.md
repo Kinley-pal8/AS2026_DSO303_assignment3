@@ -62,28 +62,52 @@ Save each screenshot as `evidence/cw-<run>-<graph>.png`.
 | B | Use RDS Proxy (production profile) so connections are pooled | USD 26/month (already in the design) |
 | C | Scale the database to db.t4g.medium (`-var="db_instance_class=db.t4g.medium"`) | +USD 74/month on demand |
 
-Run 2 re-tests with the fix applied; the table below compares the two runs.
+### What CloudWatch actually showed (run 1)
+
+The hypothesis was **wrong**, and CloudWatch shows why (`evidence/cloudwatch-run1-t4g-micro.md`):
+
+- **The database is idle.** RDS CPU peaked at 6.4%, the CPU credit balance stayed at 72, and there were only 13 connections. The schema statements took 18 ms on average (37 ms at most) per new environment. The API caches each exam paper in memory, so the start storm hardly touches RDS.
+- **The slow requests are Lambda cold starts.** 13 new environments started (Lambda peak concurrency was also 13), each with an average init time of 813 ms (1,089 ms at most). On its first request each one also opened a database connection, which took 309 ms on average (Secrets Manager call plus TLS handshake). A student who lands on a new environment therefore waits about 1.1–1.2 s, which matches the API Gateway p99 of 1,196 ms. Warm requests take 12 ms in Lambda (p95).
+- 10 of the 13 cold starts happened in the first 90 seconds, during the start storm; the per-30-second Logs Insights table shows this.
+
+**Bottleneck: cold starts of the API Lambda during the start storm**, about 1.1 s each, including about 0.3 s to connect to the database. It does not break the p95 target, but it is the only thing that makes any request slow, and it hits exactly the moment students press "Start".
+
+**Fixes considered:**
+
+| Fix | Change | Evidence for or against | Cost |
+| --- | --- | --- | --- |
+| A | Only run the schema statements when the schema is missing | Saves at most about 18 ms per cold start. **Not worth it.** | None |
+| B | RDS Proxy | Lambda still opens a TLS connection to the proxy on its first request, so it shortens the 309 ms only partly and does nothing about the 813 ms init. Useful for connection counts at larger scale; not available in the lab. | USD 26/month (already in the design) |
+| C | db.t4g.medium | The database CPU is at 6.4%, so a bigger instance would change nothing. **Rejected.** | +USD 74/month |
+| **D (applied)** | **Provisioned concurrency of 15 on the API alias during exam windows**, sized from the measured peak of 13 plus headroom. Each pre-warmed environment also opens its database connection while it is being prepared (`backend/api.py`, only when `AWS_LAMBDA_INITIALIZATION_TYPE` is `provisioned-concurrency`). | Removes both the init time and the first connection time from the student's request. | Only during exam windows; see the cost report |
+
+Run 2 re-tests with fix D applied; the table below compares the two runs.
 
 ## 4. Results
 
-*Filled in after running. The numbers come from `evidence/load-test-*.json` and the CloudWatch screenshots.*
+The numbers come from `evidence/load-test-*.json` (measured by the client) and `evidence/cloudwatch-*.md` (measured by CloudWatch).
 
-**First attempt rejected (test-tool bug).** The first run 1 reached only 4.6 starts per second, not 10. The script ran the start storm on a pool of 100 threads, so 300 students started in three waves instead of within 30 seconds. It also reused one exam, so a repeat run would only re-read existing attempts. The script now uses one thread per student and creates a new exam for every run. The rejected output is kept as `evidence/load-test-run0-underdriven.json` (0 errors, start p95 98 ms, autosave 99 per second at p95 44 ms).
+**First attempt rejected (test-tool bug).** The first run 1 reached only 4.6 starts per second, not 10. The script ran the start storm on a pool of 100 threads, so 300 students started in three waves instead of within 30 seconds. It also reused one exam, so a repeat run would only re-read existing attempts. The script now uses one thread per student and creates a new exam for every run. The rejected output is `load-test-run0-underdriven.json` (0 errors, start p95 98 ms, autosave 99 per second at p95 44 ms). It was lost when CloudShell restarted, so only these numbers remain. A second valid run 1 was made before the Lambda REPORT lines were switched on; it is kept as `evidence/load-test-run1a-before-logging.json` (start p95 53 ms, p99 436 ms, max 854 ms), and it agrees with run 1.
 
-| Metric | Run 1 (before) | Run 2 (after fix) | Target |
+| Metric | Run 1 (before) | Run 2 (after fix D) | Target |
 | --- | --- | --- | --- |
-| Start storm p95 latency | | | < 1,000 ms |
-| Start storm error rate | | | < 1% |
-| Autosave rate achieved | | | ≥ 100 /s |
-| Autosave p95 latency | | | < 500 ms |
-| Autosave error rate | | | < 0.1% |
-| RDS CPU max | | | < 70% |
-| RDS connections max | | | < 80% of max_connections |
-| Lambda throttles | | | 0 |
+| Start storm rate | 10.0 /s | | 10 /s |
+| Start storm p95 latency (client) | 94 ms | | < 1,000 ms |
+| Start storm p99 / max (client) | 174 / 779 ms | | |
+| Start storm error rate | 0% | | < 1% |
+| API Gateway p99 latency (worst minute) | 1,196 ms | | < 1,000 ms |
+| Lambda cold starts / average init | 13 / 813 ms | | |
+| First DB connection (average) | 309 ms | | |
+| Autosave rate achieved | 99.0 /s | | ≥ 100 /s (300 × 1 per 3 s) |
+| Autosave p95 latency | 43 ms | | < 500 ms |
+| Autosave error rate | 0% | | < 0.1% |
+| RDS CPU max | 6.4% | | < 70% |
+| RDS connections max | 13 | | < 80% of max_connections |
+| Lambda throttles | 0 | | 0 |
 
-**Finding:** *(one or two sentences after run 1: what CloudWatch proved)*
-**Fix applied:** *(A, B or C)*
-**Re-test result:** *(did run 2 meet the targets?)*
+**Finding:** CloudWatch disproved the database hypothesis (RDS CPU 6.4%, 13 connections, schema statements 18 ms). The slowest requests are API Lambda cold starts during the start storm: 813 ms init plus a 309 ms first database connection, which pushes the API Gateway p99 to 1.2 s.
+**Fix applied:** D, provisioned concurrency of 15 with the database connection opened during warm-up.
+**Re-test result:** *(after run 2)*
 
 ## 5. Two more bottlenecks, reasoned (not tested)
 
