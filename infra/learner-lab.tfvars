@@ -14,6 +14,7 @@ nat_gateway_per_az      = false          # one NAT saves lab credit; set true fo
 db_multi_az             = true           # two-AZ database (rubric requirement)
 enable_load_test_auth   = true           # Assignment 3 load test signs in test students; set false when finished
 enable_api_access_logs  = true           # keep per-request logs during the load test for evidence
+lambda_system_log_level = "INFO"         # keep Lambda REPORT lines (@initDuration) as cold-start evidence; production uses WARN
 db_instance_class       = "db.t4g.micro" # load-test run 1 (the Assignment 2 size); run 2 uses db.t4g.medium
 create_buckets_with_cli = true           # lab SCP denies s3:GetBucketObjectLockConfiguration
 web_origin_public       = true           # lab denies cloudfront:CreateOriginAccessControl; only static files are public

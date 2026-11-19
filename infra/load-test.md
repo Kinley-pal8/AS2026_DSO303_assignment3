@@ -22,9 +22,11 @@ cd infra && terraform apply -var-file=learner-lab.tfvars -var="initial_admin_ema
 
 python3 scripts/load_test.py setup --students 300
 python3 scripts/load_test.py run --label run1-t4g-micro       # before the fix
+python3 scripts/cloudwatch_summary.py run1-t4g-micro              # metrics + Logs Insights -> evidence/cloudwatch-run1-t4g-micro.md
 #   -> screenshot the CloudWatch graphs below for the printed time window
 #   -> apply the fix (section 3), wait for it to finish
 python3 scripts/load_test.py run --label run2-after-fix         # re-test
+python3 scripts/cloudwatch_summary.py run2-after-fix
 python3 scripts/load_test.py cleanup
 ```
 

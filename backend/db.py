@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import ssl
+import time
 
 import boto3
 import pg8000.native
@@ -89,6 +90,7 @@ def _credentials(host, port):
 
 
 def _connect():
+    t0 = time.perf_counter()
     host = os.environ["DB_HOST"]
     port = int(os.environ.get("DB_PORT", "5432"))
     user, password = _credentials(host, port)
@@ -96,12 +98,16 @@ def _connect():
         user=user, host=host, port=port, database=os.environ["DB_NAME"],
         password=password, ssl_context=_ssl_context(), timeout=10,
     )
+    t1 = time.perf_counter()
     # Advisory lock so concurrent cold starts don't race creating the schema.
     conn.run("BEGIN")
     conn.run("SELECT pg_advisory_xact_lock(4242)")
     for stmt in filter(None, (s.strip() for s in SCHEMA.split(";"))):
         conn.run(stmt)
     conn.run("COMMIT")
+    t2 = time.perf_counter()
+    # One line per new connection; read with CloudWatch Logs Insights (scripts/cloudwatch_summary.py).
+    log.info("db_connect connect_ms=%d schema_ms=%d", (t1 - t0) * 1000, (t2 - t1) * 1000)
     return conn
 
 
