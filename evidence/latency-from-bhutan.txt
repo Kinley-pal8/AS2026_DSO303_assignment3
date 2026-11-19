@@ -1,0 +1,6 @@
+# TCP connect time from the author's laptop (Bhutan) to AWS regional endpoints
+# Command: curl -s -o /dev/null -w '%{time_connect}' https://dynamodb.<region>.amazonaws.com/ping   (8 samples each)
+# Measured: 2026-11-19
+ap-southeast-1 (Singapore)  min=80ms  median=84ms  max=248ms
+ap-south-1     (Mumbai)     min=63ms  median=74ms  max=166ms
+us-east-1      (N. Virginia) min=328ms median=345ms max=485ms

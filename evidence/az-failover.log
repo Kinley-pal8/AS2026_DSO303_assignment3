@@ -1,0 +1,110 @@
+# Output of scripts/simulate-az-failover.sh, AWS Academy Learner Lab (us-east-1), 19 Nov 2026 (times UTC).
+# Each run forces an RDS Multi-AZ failover (aws rds reboot-db-instance --force-failover) while
+# polling GET /api/health?deep=1 (API Gateway -> Lambda -> PostgreSQL SELECT 1) every ~3 s.
+# HTTP 000 = request timed out after 5 s (shown as "000000" with the previous response by the first
+# script version; fixed afterwards).
+#
+# Summary - outage = last successful check before the failure to first successful check after it:
+#   run 1: 11:39:27 -> 11:39:43  <= 16 s   primary us-east-1b -> us-east-1a (AZ reported a few minutes later)
+#   run 2: 11:44:19 -> 11:44:33  <= 14 s   primary us-east-1a -> us-east-1b
+#   run 3: 11:48:51 -> 11:49:08  <= 17 s   primary us-east-1b -> us-east-1a
+# Result: worst case under 20 seconds against a 1-hour RTO; synchronous standby, so no committed data lost.
+
+Before: primary/standby AZ = us-east-1b us-east-1a
+11:39:18 forced failover requested
+11:39:18 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088358}
+11:39:21 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088361}
+11:39:24 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088364}
+11:39:27 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088367}
+11:39:40 HTTP 503 {"ok": false, "db": "InterfaceError", "time": 1795088380}
+11:39:43 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088383}
+11:39:46 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088386}
+11:39:49 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088389}
+11:39:52 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088392}
+11:39:55 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088395}
+11:39:58 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088398}
+11:40:01 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088401}
+11:40:04 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088404}
+11:40:07 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088407}
+11:40:10 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088410}
+11:40:13 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088413}
+11:40:16 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088416}
+11:40:19 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088419}
+11:40:22 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088422}
+11:40:25 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088425}
+11:40:27 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088427}
+11:40:30 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088430}
+Database unavailable for ~51s (upper bound)
+After: primary/standby AZ = us-east-1b  us-east-1a
+Before: primary/standby AZ = us-east-1a us-east-1b
+11:43:07 forced failover requested
+11:43:08 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088588}
+11:43:11 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088591}
+11:43:14 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088594}
+11:43:17 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088597}
+11:43:20 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088600}
+11:43:23 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088603}
+11:43:26 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088606}
+11:43:29 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088609}
+11:43:32 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088612}
+11:43:35 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088615}
+11:43:37 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088617}
+11:43:40 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088620}
+11:43:43 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088623}
+11:43:46 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088626}
+11:43:49 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088629}
+11:43:52 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088632}
+11:43:55 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088635}
+11:43:58 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088638}
+11:44:01 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088641}
+11:44:04 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088644}
+11:44:07 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088647}
+11:44:10 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088650}
+11:44:13 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088653}
+11:44:16 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088656}
+11:44:19 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088659}
+11:44:27 HTTP 000000 {"ok": true, "db": "ok", "az": null, "time": 1795088659}
+11:44:30 HTTP 503 {"ok": false, "db": "InterfaceError", "time": 1795088670}
+11:44:33 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088673}
+11:44:35 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088675}
+11:44:38 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088678}
+11:44:41 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088681}
+11:44:44 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088684}
+11:44:47 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088687}
+11:44:50 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088690}
+11:44:53 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088693}
+11:44:56 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088696}
+11:44:59 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088699}
+11:45:02 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088702}
+11:45:05 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088705}
+11:45:08 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088708}
+11:45:11 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088711}
+11:45:13 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088713}
+11:45:16 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088716}
+11:45:19 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088719}
+API outage (first failed to first successful health check): 6 s
+Before: primary/standby AZ = us-east-1a us-east-1b
+11:48:44 forced failover requested
+11:48:45 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088925}
+11:48:48 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088928}
+11:48:51 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088931}
+11:48:59 HTTP 000000 {"ok": true, "db": "ok", "az": null, "time": 1795088931}
+11:49:02 HTTP 503 {"ok": false, "db": "InterfaceError", "time": 1795088942}
+11:49:05 HTTP 503 {"ok": false, "db": "InterfaceError", "time": 1795088945}
+11:49:08 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088948}
+11:49:11 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088951}
+11:49:14 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088954}
+11:49:17 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088957}
+11:49:20 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088960}
+11:49:23 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088963}
+11:49:26 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088966}
+11:49:29 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088969}
+11:49:32 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088972}
+11:49:35 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088975}
+11:49:38 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088978}
+11:49:40 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088980}
+11:49:43 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088983}
+11:49:46 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088986}
+11:49:49 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088989}
+11:49:52 HTTP 200 {"ok": true, "db": "ok", "az": null, "time": 1795088992}
+API outage (first failed to first successful health check): 9 s

@@ -1,0 +1,72 @@
+flowchart TB
+  user(["Students · Tutors · Admins (Bhutan)"])
+  dev(["Developer: git push main"])
+
+  subgraph EDGE["Edge (global)"]
+    r53["Route 53"]
+    cf["CloudFront + WAF<br/>/ → web bucket · /api/* → API<br/>NEW: /files/* → uploads bucket (signed URLs)"]
+  end
+
+  subgraph REGION["Region ap-southeast-1 (Singapore) — ⚠ accepted SPOF: single Region"]
+    cognito["Cognito user pool<br/>⚠ regional, no failover (accepted)"]
+    apigw["API Gateway HTTP API<br/>1,000 rps / 2,000 burst"]
+    ddb[("DynamoDB attempts<br/>on-demand · PITR · 3 AZs")]
+    s3up[("S3 uploads<br/>IA 30 d → Glacier IR 90 d (was 180) → Deep Archive 1 y → delete 5 y")]
+    s3web[("S3 web bucket")]
+    sqs[["SQS marking · uploads · notifications + DLQs"]]
+    eb["EventBridge 1 min → λ sweeper"]
+    notifier["λ notifier → SES<br/>⚠ SES sending (accepted, retried)"]
+    kms["KMS CMK"]
+    sm["Secrets Manager"]
+    cw["CloudWatch: 14-day logs (was 30), platform logs WARN,<br/>alarms incl. DB CPU credits + connections (NEW)"]
+    backup["AWS Backup: daily 35 d · monthly 5 y"]
+
+    subgraph VPC["VPC 10.20.0.0/16"]
+      subgraph AZA["AZ ap-southeast-1a"]
+        natA["NAT gateway A"]
+        lamA["λ api · marker · uploads"]
+        rdsA[("RDS PostgreSQL PRIMARY<br/>db.t4g.medium, 1-yr RI (NEW)")]
+      end
+      subgraph AZB["AZ ap-southeast-1b"]
+        natB["NAT gateway B"]
+        lamB["λ api · marker · uploads"]
+        rdsB[("RDS PostgreSQL STANDBY<br/>synchronous")]
+      end
+      proxy["RDS Proxy (endpoints in both AZs)"]
+      gwe["Gateway endpoints S3 · DynamoDB"]
+    end
+  end
+
+  subgraph CICD["CI/CD"]
+    gh["GitHub Actions → Terraform"]
+    state[("S3 state, versioned")]
+  end
+
+  user --> r53 --> cf
+  cf --> s3web
+  cf --> apigw
+  cf -->|"/files/* (NEW: replaces direct S3 download)"| s3up
+  user -->|sign-in| cognito
+  apigw -. JWT .- cognito
+  apigw --> lamA & lamB
+  lamA & lamB --> proxy --> rdsA
+  rdsA <-->|sync replication| rdsB
+  lamA & lamB --> gwe --> ddb & s3up
+  lamA --> natA
+  lamB --> natB
+  user -->|presigned POST ≤ 50 MB| s3up
+  s3up --> sqs --> lamA
+  sqs --> notifier
+  eb --> ddb
+  kms -.- ddb & s3up & rdsA
+  sm -.- proxy
+  backup -.- ddb & rdsA
+  lamA & lamB & apigw --> cw
+  dev --> gh --> state
+
+  classDef removed fill:#e6f4ea,stroke:#1e8e3e,color:#000
+  classDef accepted fill:#fef7e0,stroke:#f29900,color:#000
+  classDef changed fill:#e8f0fe,stroke:#1a73e8,color:#000
+  class rdsA,rdsB,proxy,natA,natB,lamA,lamB removed
+  class cognito,notifier accepted
+  class cw,s3up changed

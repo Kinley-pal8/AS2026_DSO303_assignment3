@@ -1,0 +1,118 @@
+name: ci-cd
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  id-token: write # GitHub OIDC -> AWS role, no stored access keys
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'ap-southeast-1' }}
+  TF_IN_AUTOMATION: "true"
+  TF_VAR_region: ${{ vars.AWS_REGION || 'ap-southeast-1' }}
+  TF_VAR_ses_sender_email: ${{ vars.SES_SENDER_EMAIL }}
+  TF_VAR_alarm_email: ${{ vars.ALARM_EMAIL }}
+  TF_VAR_initial_admin_email: ${{ vars.INITIAL_ADMIN_EMAIL }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Unit tests
+        run: |
+          pip install -r backend/requirements.txt boto3 pytest
+          pytest -q
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.17.2"
+
+      - name: Terraform fmt + validate
+        run: |
+          terraform -chdir=infra fmt -check -recursive
+          terraform -chdir=infra init -backend=false -input=false
+          terraform -chdir=infra validate
+          mkdir -p build/lambda
+          terraform -chdir=infra test   # plans production + Learner Lab profiles with mocked AWS
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      # Real AWS account: keyless OIDC role (set variable AWS_DEPLOY_ROLE_ARN).
+      - name: AWS credentials (OIDC role)
+        if: vars.AWS_DEPLOY_ROLE_ARN != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # AWS Academy Learner Lab: cannot create an OIDC role, so use the lab's temporary keys
+      # (secrets AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_SESSION_TOKEN, refreshed per lab session).
+      - name: AWS credentials (Learner Lab session keys)
+        if: vars.AWS_DEPLOY_ROLE_ARN == ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.17.2"
+          terraform_wrapper: false
+
+      - name: Build Lambda package
+        run: ./scripts/build.sh
+
+      - name: Terraform init
+        run: |
+          terraform -chdir=infra init -input=false \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="key=uniexam/prod.tfstate" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="use_lockfile=true" \
+            -backend-config="encrypt=true"
+
+      - name: Terraform apply
+        run: |
+          EXTRA=""
+          if [ "${{ vars.LEARNER_LAB }}" = "true" ]; then EXTRA="-var-file=learner-lab.tfvars"; fi
+          terraform -chdir=infra apply -auto-approve -input=false $EXTRA
+
+      - name: Invalidate CloudFront cache
+        run: |
+          DIST_ID=$(terraform -chdir=infra output -raw cloudfront_distribution_id)
+          if [ -n "$DIST_ID" ]; then aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths "/*"; fi
+
+      - name: Smoke test
+        run: |
+          URL=$(terraform -chdir=infra output -raw app_url)
+          for i in $(seq 1 10); do
+            curl -fsS "$URL/api/health" && exit 0
+            sleep 15
+          done
+          echo "health check failed" && exit 1

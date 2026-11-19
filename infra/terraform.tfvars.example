@@ -1,0 +1,16 @@
+# Copy to terraform.tfvars (git-ignored) for local runs. CI passes these as TF_VAR_* instead.
+region              = "ap-south-1"
+ses_sender_email    = "you@example.com"
+alarm_email         = "you@example.com"
+initial_admin_email = "you@example.com"
+
+# Cheaper test settings (set back for the "production" demo):
+# nat_gateway_per_az = false
+
+# Exam week:
+# api_provisioned_concurrency = 20
+# db_instance_class           = "db.r6g.large"
+
+# Optional custom domain:
+# domain_name    = "exams.example.edu"
+# hosted_zone_id = "Z0123456789ABC"
