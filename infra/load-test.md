@@ -66,6 +66,8 @@ Run 2 re-tests with the fix applied; the table below compares the two runs.
 
 *Filled in after running. The numbers come from `evidence/load-test-*.json` and the CloudWatch screenshots.*
 
+**First attempt rejected (test-tool bug).** The first run 1 reached only 4.6 starts per second, not 10. The script ran the start storm on a pool of 100 threads, so 300 students started in three waves instead of within 30 seconds. It also reused one exam, so a repeat run would only re-read existing attempts. The script now uses one thread per student and creates a new exam for every run. The rejected output is kept as `evidence/load-test-run0-underdriven.json` (0 errors, start p95 98 ms, autosave 99 per second at p95 44 ms).
+
 | Metric | Run 1 (before) | Run 2 (after fix) | Target |
 | --- | --- | --- | --- |
 | Start storm p95 latency | | | < 1,000 ms |

@@ -90,6 +90,15 @@ def setup(args):
     students = [f"student{i:04d}@{DOMAIN}" for i in range(args.students)]
     with cf.ThreadPoolExecutor(8) as ex:  # Cognito admin APIs are rate-limited; keep this modest
         list(ex.map(lambda e: make_user(idp, pool, e, password, "students"), students))
+    exam_id = create_exam(base, sign_in(idp, pool, client, tutor, password))
+    os.makedirs(os.path.dirname(STATE), exist_ok=True)
+    json.dump({"base": base, "pool": pool, "client": client, "password": password, "tutor": tutor,
+               "students": students, "exam_id": exam_id}, open(STATE, "w"))
+    print(f"created {len(students)} students and exam {exam_id}; state in {STATE}")
+
+
+def create_exam(base, tutor_token):
+    """A new exam for every run, so each start-storm request creates a real attempt."""
     now = dt.datetime.now(dt.timezone.utc)
     exam = {
         "title": "Load test exam", "course": "LOAD101", "duration_minutes": 120,
@@ -99,13 +108,10 @@ def setup(args):
                        "answer": i % 4, "marks": 1} for i in range(1, 31)]
                      + [{"id": "s1", "type": "short", "text": "Explain RPO.", "marks": 5}],
     }
-    status, _, payload = call(base, "POST", "/api/exams", sign_in(idp, pool, client, tutor, password), exam)
+    status, _, payload = call(base, "POST", "/api/exams", tutor_token, exam)
     if status != 200:
         raise SystemExit(f"creating the exam failed: {status} {payload[:300]!r}")
-    os.makedirs(os.path.dirname(STATE), exist_ok=True)
-    json.dump({"base": base, "pool": pool, "client": client, "password": password, "tutor": tutor,
-               "students": students, "exam_id": json.loads(payload)["id"]}, open(STATE, "w"))
-    print(f"created {len(students)} students and exam {json.loads(payload)['id']}; state in {STATE}")
+    return json.loads(payload)["id"]
 
 
 def summarise(name, samples, seconds):
@@ -124,7 +130,9 @@ def summarise(name, samples, seconds):
 def run(args):
     st = json.load(open(STATE))
     idp = boto3.client("cognito-idp")
-    base, exam = st["base"], st["exam_id"]
+    base = st["base"]
+    exam = create_exam(base, sign_in(idp, st["pool"], st["client"], st["tutor"], st["password"]))
+    print(f"new exam for this run: {exam}")
     print("signing in students ...")
     with cf.ThreadPoolExecutor(8) as ex:
         tokens = list(ex.map(lambda e: sign_in(idp, st["pool"], st["client"], e, st["password"]), st["students"]))
@@ -139,8 +147,10 @@ def run(args):
         with lock:
             samples.append(r[:2])
 
+    # one thread per student: every student must be able to wait out its own random delay,
+    # otherwise a smaller pool starts students in waves and the start rate falls below target
     t0 = time.time()
-    with cf.ThreadPoolExecutor(args.workers) as ex:
+    with cf.ThreadPoolExecutor(len(tokens)) as ex:
         list(ex.map(start, tokens))
     phase1 = summarise("start storm", samples, time.time() - t0)
     print(json.dumps(phase1, indent=2))
@@ -167,7 +177,7 @@ def run(args):
 
     result = {"label": args.label, "started_utc": started_utc.isoformat(timespec="seconds"),
               "ended_utc": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
-              "students": len(tokens), "start_window_s": args.start_window, "autosave_interval_s": args.interval,
+              "exam_id": exam, "students": len(tokens), "start_window_s": args.start_window, "autosave_interval_s": args.interval,
               "phases": [phase1, phase2]}
     os.makedirs(EVIDENCE, exist_ok=True)
     path = os.path.join(EVIDENCE, f"load-test-{args.label}.json")
@@ -195,7 +205,6 @@ if __name__ == "__main__":
     r.add_argument("--start-window", type=float, default=30, help="seconds over which all students start")
     r.add_argument("--interval", type=float, default=3, help="seconds between autosaves per student")
     r.add_argument("--duration", type=float, default=300, help="seconds of autosave load")
-    r.add_argument("--workers", type=int, default=100)
     sub.add_parser("cleanup")
     a = ap.parse_args()
     {"setup": setup, "run": run, "cleanup": cleanup}[a.cmd](a)
