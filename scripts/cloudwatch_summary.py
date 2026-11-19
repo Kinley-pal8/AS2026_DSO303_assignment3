@@ -119,6 +119,17 @@ def main(label):
                        "| stats count(record.metrics.initDurationMs) as cold_starts, "
                        "pct(record.metrics.durationMs, 99) as p99_duration_ms by bin(30s)")
 
+    access = f"/aws/apigateway/{db.rsplit('-db', 1)[0]}"  # API Gateway access log (one line per request)
+    try:
+        slow = insights(logs, access, start, end,
+                        "filter latencyMs >= 300 | stats count(*) as requests_over_300ms, "
+                        "max(latencyMs) as max_ms by method")
+        slowest = insights(logs, access, start, end,
+                           "fields @timestamp, method, status, latencyMs | filter latencyMs >= 300 "
+                           "| sort latencyMs desc | limit 20")
+    except logs.exceptions.ResourceNotFoundException:
+        slow = slowest = [{"note": f"{access} not found (enable_api_access_logs = false)"}]
+
     lines = [f"# CloudWatch summary: {label}", "",
              f"Window (UTC): {run['started_utc']} to {run['ended_utc']}, padded by 1 minute each side.",
              f"Resources: API {api_id}, Lambda {fn}, RDS {db}, DynamoDB {table}.", "",
@@ -128,7 +139,10 @@ def main(label):
               "", "## New database connections (db_connect lines from backend/db.py)", "",
               "```", json.dumps(first, indent=2), "```",
               "", "## Cold starts and p99 duration per 30 seconds", "",
-              "```", json.dumps(sorted(per_bin, key=lambda r: r.get("bin(30s)", "")), indent=2), "```"]
+              "```", json.dumps(sorted(per_bin, key=lambda r: r.get("bin(30s)", "")), indent=2), "```",
+              "", "## Requests that took 300 ms or more (API Gateway access log)", "",
+              "```", json.dumps(slow, indent=2), "```", "", "Slowest 20:", "",
+              "```", json.dumps(slowest, indent=2), "```"]
     text = "\n".join(lines) + "\n"
     path = os.path.join(EVIDENCE, f"cloudwatch-{label}.md")
     open(path, "w").write(text)
