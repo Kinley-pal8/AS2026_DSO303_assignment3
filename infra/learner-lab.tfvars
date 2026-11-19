@@ -20,5 +20,7 @@ create_buckets_with_cli = true           # lab SCP denies s3:GetBucketObjectLock
 web_origin_public       = true           # lab denies cloudfront:CreateOriginAccessControl; only static files are public
 enable_cloudfront       = false          # lab denies cloudfront:CreateDistribution; API Gateway serves the SPA over HTTPS
 
-# Load-test fix D (run 2): measured peak concurrency 13 + headroom. Set 0 when finished (costs credit).
-api_provisioned_concurrency = 15
+# Load-test fixes. D (provisioned concurrency) is denied by the lab's service control policy, so it stays 0.
+# E (run 2): more API memory, so cold starts get more CPU. 512 MB = run 1, 1769 MB = one full vCPU.
+api_provisioned_concurrency = 0
+api_memory_mb               = 1769

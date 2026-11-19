@@ -40,6 +40,12 @@ variable "db_engine_version" {
   default     = "16"
 }
 
+variable "api_memory_mb" {
+  description = "API Lambda memory. CPU is allocated in proportion (1,769 MB = 1 vCPU), which shortens cold starts."
+  type        = number
+  default     = 512
+}
+
 variable "api_provisioned_concurrency" {
   description = "Pre-warmed API Lambda environments. Set to ~20 during exam week, 0 otherwise."
   type        = number

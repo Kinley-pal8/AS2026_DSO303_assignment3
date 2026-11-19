@@ -6,7 +6,7 @@ data "archive_file" "lambda" {
 
 locals {
   functions = merge({
-    api      = { handler = "api.handler", timeout = 15, memory = 512, vpc = true }
+    api      = { handler = "api.handler", timeout = 15, memory = var.api_memory_mb, vpc = true }
     marker   = { handler = "marker.handler", timeout = 30, memory = 256, vpc = true }
     uploads  = { handler = "uploads.handler", timeout = 30, memory = 256, vpc = true }
     notifier = { handler = "notifier.handler", timeout = 30, memory = 128, vpc = false }

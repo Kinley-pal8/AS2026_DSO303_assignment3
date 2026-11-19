@@ -79,9 +79,10 @@ The hypothesis was **wrong**, and CloudWatch shows why (`evidence/cloudwatch-run
 | A | Only run the schema statements when the schema is missing | Saves at most about 18 ms per cold start. **Not worth it.** | None |
 | B | RDS Proxy | Lambda still opens a TLS connection to the proxy on its first request, so it shortens the 309 ms only partly and does nothing about the 813 ms init. Useful for connection counts at larger scale; not available in the lab. | USD 26/month (already in the design) |
 | C | db.t4g.medium | The database CPU is at 6.4%, so a bigger instance would change nothing. **Rejected.** | +USD 74/month |
-| **D (applied)** | **Provisioned concurrency of 15 on the API alias during exam windows**, sized from the measured peak of 13 plus headroom. Each pre-warmed environment also opens its database connection while it is being prepared (`backend/api.py`, only when `AWS_LAMBDA_INITIALIZATION_TYPE` is `provisioned-concurrency`). | Removes both the init time and the first connection time from the student's request. | Only during exam windows; see the cost report |
+| D | **Provisioned concurrency of 15 on the API alias during exam windows**, sized from the measured peak of 13 plus headroom. Each pre-warmed environment also opens its database connection while it is being prepared (`backend/api.py`, only when `AWS_LAMBDA_INITIALIZATION_TYPE` is `provisioned-concurrency`). | Removes both the init time and the first connection time from the student's request. **Tried, but denied in the lab:** `lambda:PutProvisionedConcurrencyConfig` has an explicit deny in the Learner Lab service control policy. It remains the production recommendation for exam windows. | Only during exam windows; see the cost report |
+| **E (applied)** | **More API Lambda memory: 512 MB to 1,769 MB** (`api_memory_mb`). Lambda allocates CPU in proportion to memory, and 1,769 MB is one full vCPU. | Init (loading libraries, creating clients) and the TLS handshake for the database connection are CPU work, so cold starts should shorten. Warm requests also get faster, which offsets the higher price per millisecond. | Measured in run 2; see the cost report |
 
-Run 2 re-tests with fix D applied; the table below compares the two runs.
+Run 2 re-tests with fix E applied; the table below compares the two runs.
 
 ## 4. Results
 
@@ -89,7 +90,7 @@ The numbers come from `evidence/load-test-*.json` (measured by the client) and `
 
 **First attempt rejected (test-tool bug).** The first run 1 reached only 4.6 starts per second, not 10. The script ran the start storm on a pool of 100 threads, so 300 students started in three waves instead of within 30 seconds. It also reused one exam, so a repeat run would only re-read existing attempts. The script now uses one thread per student and creates a new exam for every run. The rejected output is `load-test-run0-underdriven.json` (0 errors, start p95 98 ms, autosave 99 per second at p95 44 ms). It was lost when CloudShell restarted, so only these numbers remain. A second valid run 1 was made before the Lambda REPORT lines were switched on; it is kept as `evidence/load-test-run1a-before-logging.json` (start p95 53 ms, p99 436 ms, max 854 ms), and it agrees with run 1.
 
-| Metric | Run 1 (before) | Run 2 (after fix D) | Target |
+| Metric | Run 1 (512 MB) | Run 2 (fix E, 1,769 MB) | Target |
 | --- | --- | --- | --- |
 | Start storm rate | 10.0 /s | | 10 /s |
 | Start storm p95 latency (client) | 94 ms | | < 1,000 ms |
@@ -106,7 +107,7 @@ The numbers come from `evidence/load-test-*.json` (measured by the client) and `
 | Lambda throttles | 0 | | 0 |
 
 **Finding:** CloudWatch disproved the database hypothesis (RDS CPU 6.4%, 13 connections, schema statements 18 ms). The slowest requests are API Lambda cold starts during the start storm: 813 ms init plus a 309 ms first database connection, which pushes the API Gateway p99 to 1.2 s.
-**Fix applied:** D, provisioned concurrency of 15 with the database connection opened during warm-up.
+**Fix applied:** E, API Lambda memory raised from 512 MB to 1,769 MB. Fix D (provisioned concurrency) was tried first, but the lab denies it.
 **Re-test result:** *(after run 2)*
 
 ## 5. Two more bottlenecks, reasoned (not tested)
