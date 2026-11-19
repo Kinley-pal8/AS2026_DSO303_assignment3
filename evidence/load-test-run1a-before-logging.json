@@ -1,0 +1,41 @@
+{
+  "label": "run1-t4g-micro",
+  "started_utc": "2026-11-19T21:21:17+00:00",
+  "ended_utc": "2026-11-19T21:26:50+00:00",
+  "exam_id": "a81c806f-bd93-4b35-b870-a73d2a9f0588",
+  "students": 300,
+  "start_window_s": 30,
+  "autosave_interval_s": 3,
+  "phases": [
+    {
+      "phase": "start storm",
+      "requests": 300,
+      "ok": 300,
+      "error_rate_pct": 0.0,
+      "rate_per_s": 10.0,
+      "p50_ms": 39,
+      "p95_ms": 53,
+      "p99_ms": 436,
+      "max_ms": 854,
+      "mean_ms": 45,
+      "status_codes": {
+        "200": 300
+      }
+    },
+    {
+      "phase": "autosave",
+      "requests": 29995,
+      "ok": 29995,
+      "error_rate_pct": 0.0,
+      "rate_per_s": 99.0,
+      "p50_ms": 33,
+      "p95_ms": 42,
+      "p99_ms": 55,
+      "max_ms": 1158,
+      "mean_ms": 34,
+      "status_codes": {
+        "200": 29995
+      }
+    }
+  ]
+}
