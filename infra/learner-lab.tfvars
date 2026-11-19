@@ -17,3 +17,4 @@ enable_api_access_logs  = true           # keep per-request logs during the load
 db_instance_class       = "db.t4g.micro" # load-test run 1 (the Assignment 2 size); run 2 uses db.t4g.medium
 create_buckets_with_cli = true           # lab SCP denies s3:GetBucketObjectLockConfiguration
 web_origin_public       = true           # lab denies cloudfront:CreateOriginAccessControl; only static files are public
+enable_cloudfront       = false          # lab denies cloudfront:CreateDistribution; API Gateway serves the SPA over HTTPS
