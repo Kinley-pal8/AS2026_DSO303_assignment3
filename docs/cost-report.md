@@ -13,7 +13,7 @@
 | API requests | 8.64 M | 18.64 M | 400 users × 12 h/day × 1 call/min; plus 40,000 exam attempts × 250 calls |
 | Exam attempts | — | 40,000 | 8,000 students × 5 exams, 2 h each |
 | Autosave writes | ~2 M | 9.6 M extra | Every 30 s, 240 per attempt; a 4 KB answer item costs 4 write units |
-| Lambda | 512 MB arm64, 120 ms average | same | Measured in the load test |
+| Lambda | 512 MB arm64, 120 ms average | same | Deliberately cautious: the load test measured 12 ms (warm p95) for exam requests. Staff pages and reports run longer queries, so the model keeps 120 ms |
 | New uploads | 320 GB | 320 GB | 8,000 students × 4 assignments × 10 MB |
 | Downloads by tutors | 480 GB | 480 GB | Each file opened about 1.5 times |
 | Log ingestion | 15 GB | 33 GB | About 1 KB of Lambda log plus 0.5 KB of API access log per request |
@@ -142,7 +142,11 @@ Mumbai is cheaper and about 10 ms closer. Singapore is acceptable and is what th
 | | 4 | Move files to Glacier Instant Retrieval at 90 days instead of 180 | **USD 68** | Files are rarely opened after the first month; GIR still returns them in milliseconds |
 | | **Total** | **USD 1,154** | Baseline USD 5,393 → optimised USD 4,239 |
 
-Not adopted: dropping RDS Proxy (USD 315 a year) would remove the protection against connection exhaustion that the load test is designed to expose; replacing NAT with interface endpoints saves nothing (§4.3).
+Not adopted:
+- **Dropping RDS Proxy (USD 315 a year).** The load test needed only 13 database connections at the brief's peak, so the Proxy is not needed for capacity at this scale. It is kept because it shortens database failovers and protects against connection exhaustion if traffic grows.
+- **Replacing NAT with interface endpoints.** It saves nothing (§4.3).
+
+**Added after the load test: provisioned concurrency during exam windows.** The load test found the only slow requests were API Lambda cold starts, at 1.1–1.5 s each ([`../infra/load-test.md`](../infra/load-test.md)). The fix is 15 pre-warmed environments of 512 MB, switched on only for exam sittings: 14 sittings of 2 h, plus 30 minutes of warm-up each, is 35 h per exam month. At USD 0.0000041593 per GB-second (arm64, Singapore), this costs **USD 3.93 per exam month, or USD 7.86 a year**. It would raise the optimised annual total from USD 4,239 to USD 4,247, still 35% of the budget. The Learner Lab denies it, so it was not tested there. The model leaves it out of the headline totals, so the totals stay comparable with the Pricing Calculator estimates.
 
 ## 7. Feasibility verdict
 
@@ -150,10 +154,10 @@ Not adopted: dropping RDS Proxy (USD 315 a year) would remove the protection aga
 | --- | --- | --- |
 | Within USD 1,000 a month (yearly average)? | **Yes**: USD 353, leaving USD 647 of headroom | §2 |
 | Still within budget if exam months need a bigger database? | **Yes**: moving to db.m7g.large Multi-AZ for the 2 exam months adds USD 387 a year (USD 386/month average) | 0.468 − 0.203 USD/h × 730 h × 2 |
-| Handles the peak (10 starts/s, 100 saves/s)? | **Yes, to be confirmed by the load test.** Lambda, API Gateway (default 10,000 req/s) and DynamoDB on-demand all have large headroom; the database is the expected bottleneck | [`../infra/load-test.md`](../infra/load-test.md) |
+| Handles the peak (10 starts/s, 100 saves/s)? | **Yes, measured**: 0 errors in about 30,300 requests per run, start p95 55–94 ms, autosave p95 42–43 ms. RDS CPU peaked at 6.4% with 13 connections. The only slow requests were 13 Lambda cold starts per run, at 1.1–1.5 s each | [`../infra/load-test.md`](../infra/load-test.md) |
 | RPO of 5 minutes? | **Yes**: autosave every 30 s, synchronous Multi-AZ replication, PITR | [`../infra/failure-tests.md`](../infra/failure-tests.md) |
 | RTO of 1 hour? | **Yes, measured**: three forced database failovers caused API outages of at most 17 s; a PITR restore or redeploy takes 20–40 minutes | Failure tests 1 and 4; [`../evidence/az-failover.log`](../evidence/az-failover.log) |
 | Survives the loss of an AZ? | **Yes**: every tier is in two AZs | [`../architecture/README.md`](../architecture/README.md) |
 | Keeps files for 5 years? | **Yes**: lifecycle expiry at 1,825 days; Backup keeps monthly copies for 5 years | §4.5 |
 
-The main cost risk is the database: the brief's peak lands on a burstable t4g instance, which can run out of CPU credits. The load test checks this, and the fallback (a larger instance in exam months) still fits the budget.
+The expected cost risk was the database, because the brief's peak lands on a burstable t4g instance that can run out of CPU credits. The load test showed this risk is low: the API caches each exam paper, so even the lab's smaller db.t4g.micro peaked at 6.4% CPU, and its credit balance did not fall. The fallback (a larger instance in exam months) still fits the budget if real exams prove heavier than the test.

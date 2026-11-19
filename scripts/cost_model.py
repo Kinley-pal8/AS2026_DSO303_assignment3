@@ -20,6 +20,7 @@ HOURS = 730  # AWS bills a month as 730 hours
 PRICES = {
     "ap-southeast-1": {  # Asia Pacific (Singapore)
         "lambda_gb_s_arm": 0.0000133334, "lambda_req": 0.20 / 1e6,
+        "lambda_pc_gb_s_arm": 0.0000041593,  # provisioned concurrency, ARM (AWSLambda price list, 2026-11-18)
         "httpapi_req": 1.25 / 1e6,
         "rds_t4g_medium_maz_hr": 0.203, "rds_t4g_large_maz_hr": 0.406, "rds_m7g_large_maz_hr": 0.468,
         "rds_t4g_medium_maz_ri1y_partial": (668, 0.0762),  # upfront USD, hourly USD (1-yr partial upfront)
@@ -199,6 +200,20 @@ def table(region, opt, md):
     return annual
 
 
+# Load-test recommendation (infra/load-test.md): pre-warm the API Lambda during exam windows only.
+# 15 environments = measured peak concurrency 13 + headroom; 512 MB each.
+# Exam windows: 40,000 attempts / 3,000 students per sitting = 14 sittings, each 2 h + 30 min warm-up.
+PC_ENVIRONMENTS, PC_MB = 15, 512
+PC_HOURS_PER_EXAM_MONTH = 14 * 2.5
+
+
+def provisioned_concurrency(region):
+    """Exam-month cost of provisioned concurrency (not part of the baseline or optimised totals)."""
+    gb_s = PC_ENVIRONMENTS * PC_MB / 1024 * PC_HOURS_PER_EXAM_MONTH * 3600
+    month = gb_s * PRICES[region]["lambda_pc_gb_s_arm"]
+    return month, 2 * month
+
+
 if __name__ == "__main__":
     md = "--markdown" in sys.argv
     print(f"Workload: normal {NORMAL_API / 1e6:.2f} M API requests, exam {EXAM_API / 1e6:.2f} M\n")
@@ -212,3 +227,8 @@ if __name__ == "__main__":
             _, _, a = summary(region, {o})
             print(f"  {o:<14} saves {base - a:>8,.2f} USD/year")
         print()
+        if "lambda_pc_gb_s_arm" in PRICES[region]:
+            m, y = provisioned_concurrency(region)
+            print(f"Load-test recommendation, provisioned concurrency {PC_ENVIRONMENTS} x {PC_MB} MB for "
+                  f"{PC_HOURS_PER_EXAM_MONTH:g} h per exam month: {m:,.2f} USD per exam month, {y:,.2f} USD/year "
+                  f"(optimised annual would be {best + y:,.2f} USD)\n")

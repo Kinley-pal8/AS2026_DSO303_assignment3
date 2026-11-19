@@ -67,6 +67,8 @@ Saving from all optimisations: 1,153.54 USD/year
   lean_logs      saves    95.99 USD/year
   s3_gir90       saves    67.58 USD/year
 
+Load-test recommendation, provisioned concurrency 15 x 512 MB for 35 h per exam month: 3.93 USD per exam month, 7.86 USD/year (optimised annual would be 4,247.17 USD)
+
 ## ap-south-1 - baseline (Assignment 2 design)
 
 | Service | Normal month (USD) | Exam month (USD) | Hidden cost? |

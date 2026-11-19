@@ -68,9 +68,9 @@ The hypothesis was **wrong**, and CloudWatch shows why (`evidence/cloudwatch-run
 
 - **The database is idle.** RDS CPU peaked at 6.4%, the CPU credit balance stayed at 72, and there were only 13 connections. The schema statements took 18 ms on average (37 ms at most) per new environment. The API caches each exam paper in memory, so the start storm hardly touches RDS.
 - **The slow requests are Lambda cold starts.** 13 new environments started (Lambda peak concurrency was also 13), each with an average init time of 813 ms (1,089 ms at most). On its first request each one also opened a database connection, which took 309 ms on average (Secrets Manager call plus TLS handshake). A student who lands on a new environment therefore waits about 1.1–1.2 s, which matches the API Gateway p99 of 1,196 ms. Warm requests take 12 ms in Lambda (p95).
-- 10 of the 13 cold starts happened in the first 90 seconds, during the start storm; the per-30-second Logs Insights table shows this.
+- The API Gateway access log shows the slow requests one by one. Exactly 13 requests took 300 ms or more, one per cold start. Most were autosaves at 21:46:58–59, the second the autosave phase began and the load jumped from 10 to 100 requests per second. One was the tutor's first request after the platform had been idle.
 
-**Bottleneck: cold starts of the API Lambda during the start storm**, about 1.1 s each, including about 0.3 s to connect to the database. It does not break the p95 target, but it is the only thing that makes any request slow, and it hits exactly the moment students press "Start".
+**Bottleneck: API Lambda cold starts whenever the load steps up**, at exam start and at the first wave of autosaves. Each takes about 1.1–1.5 s, including about 0.3 s to connect to the database. They do not break the p95 target, but they are the only thing that makes any request slow, and they hit the moments when every student is acting at once.
 
 **Fixes considered:**
 
@@ -92,23 +92,34 @@ The numbers come from `evidence/load-test-*.json` (measured by the client) and `
 
 | Metric | Run 1 (512 MB) | Run 2 (fix E, 1,769 MB) | Target |
 | --- | --- | --- | --- |
-| Start storm rate | 10.0 /s | | 10 /s |
-| Start storm p95 latency (client) | 94 ms | | < 1,000 ms |
-| Start storm p99 / max (client) | 174 / 779 ms | | |
-| Start storm error rate | 0% | | < 1% |
-| API Gateway p99 latency (worst minute) | 1,196 ms | | < 1,000 ms |
-| Lambda cold starts / average init | 13 / 813 ms | | |
-| First DB connection (average) | 309 ms | | |
-| Autosave rate achieved | 99.0 /s | | ≥ 100 /s (300 × 1 per 3 s) |
-| Autosave p95 latency | 43 ms | | < 500 ms |
-| Autosave error rate | 0% | | < 0.1% |
-| RDS CPU max | 6.4% | | < 70% |
-| RDS connections max | 13 | | < 80% of max_connections |
-| Lambda throttles | 0 | | 0 |
+| Start storm rate | 10.0 /s | 10.1 /s | 10 /s |
+| Start storm p95 latency (client) | 94 ms | 55 ms | < 1,000 ms |
+| Start storm p99 / max (client) | 174 / 779 ms | 114 / 358 ms | |
+| Start storm error rate | 0% | 0% | < 1% |
+| Autosave rate achieved | 99.0 /s | 99.0 /s | ≥ 100 /s (300 × 1 per 3 s) |
+| Autosave p95 latency | 43 ms | 42 ms | < 500 ms |
+| Autosave error rate | 0% | 0% | < 0.1% |
+| **Requests ≥ 300 ms (access log)** | **13** | **13** | |
+| **Slowest request (access log)** | **1,494 ms** | **1,166 ms (−22%)** | < 1,000 ms |
+| Requests ≥ 900 ms (access log) | 8 | 7 | |
+| Lambda cold starts / average init | 13 / 813 ms | 13 / 729 ms (−10%) | |
+| First DB connection (average) | 309 ms | 208 ms (−33%) | |
+| Lambda duration, warm p95 | 12.3 ms | 11.4 ms | |
+| API Gateway p99 latency (worst minute) | 1,196 ms | 107 ms (see note) | < 1,000 ms |
+| RDS CPU max | 6.4% | 5.6% | < 70% |
+| RDS connections max | 13 | 13 | < 80% of max_connections |
+| Lambda throttles / errors | 0 / 0 | 0 / 0 | 0 |
+
+*Note on the API Gateway p99:* a per-minute p99 depends on which minute the 13 cold starts fall into. In run 2 they fell into a minute with about 6,000 other requests, which is below 1%, so the p99 hides them. The per-request counts from the access log are the fair comparison.
 
 **Finding:** CloudWatch disproved the database hypothesis (RDS CPU 6.4%, 13 connections, schema statements 18 ms). The slowest requests are API Lambda cold starts during the start storm: 813 ms init plus a 309 ms first database connection, which pushes the API Gateway p99 to 1.2 s.
 **Fix applied:** E, API Lambda memory raised from 512 MB to 1,769 MB. Fix D (provisioned concurrency) was tried first, but the lab denies it.
-**Re-test result:** *(after run 2)*
+**Re-test result:** the fix helped, but only partly. Each cold start got shorter: init −10%, first database connection −33%, slowest request 1,494 → 1,166 ms. But the number of slow requests did not change (13 in both runs), because more memory makes a cold start faster without preventing it. All targets were met in both runs, with 0 errors out of about 30,300 requests each.
+
+**What this means for production:**
+- **More memory (E) is not worth keeping.** Warm requests barely got faster (12.3 → 11.4 ms), so the cost per request rises about 3.3 times. On the cost model's request volumes that is about USD 1.6 extra in a normal month, USD 3.4 in an exam month and about USD 23 a year: cheap, but it buys only about 0.3 s on 13 requests per exam. Production stays at 512 MB.
+- **Provisioned concurrency (D) is the real fix**, because it removes cold starts instead of shortening them. Use 15 environments on the API alias, switched on by a schedule only during exam windows. The lab blocks it, so it could not be measured here.
+- **A free alternative is a pre-warm.** About two minutes before an exam opens, a scheduled job sends about 20 parallel `GET /api/health?deep=1` requests. This starts about 20 environments and opens their database connections before students arrive. It uses only on-demand Lambda, so it costs almost nothing.
 
 ## 5. Two more bottlenecks, reasoned (not tested)
 

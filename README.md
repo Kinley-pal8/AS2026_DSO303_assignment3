@@ -15,7 +15,7 @@ DSO303 Assignment 3. This assignment analyses the Assignment 2 online exam platf
 
 ## Feasibility verdict
 
-**Feasible.** The design meets the budget with USD 647 a month of headroom. It stays within budget even if exam months need a larger database (+USD 387 a year). It meets the peak (10 starts/s, 100 autosaves/s), with the database as the expected first bottleneck, which the load test checks. It meets the RPO of 5 minutes (30-second autosave, synchronous Multi-AZ standby, PITR) and the RTO of 1 hour (automatic AZ failover in minutes; PITR restore in under an hour). It survives the loss of an AZ, and files are kept for 5 years through lifecycle rules and AWS Backup. Full reasoning is in [docs/cost-report.md §7](docs/cost-report.md#7-feasibility-verdict).
+**Feasible.** The design meets the budget with USD 647 a month of headroom. It stays within budget even if exam months need a larger database (+USD 387 a year). The load test measured the peak (10 starts/s, 100 autosaves/s) with 0 errors and a p95 under 100 ms. The database stayed at 6.4% CPU; the only slow requests were Lambda cold starts (1.1–1.5 s), fixed in production with provisioned concurrency during exam windows (+USD 8 a year). It meets the RPO of 5 minutes (30-second autosave, synchronous Multi-AZ standby, PITR) and the RTO of 1 hour (automatic AZ failover in minutes; PITR restore in under an hour). It survives the loss of an AZ, and files are kept for 5 years through lifecycle rules and AWS Backup. Full reasoning is in [docs/cost-report.md §7](docs/cost-report.md#7-feasibility-verdict).
 
 ## AWS Pricing Calculator
 
